@@ -1,9 +1,11 @@
 package ec.edu.ups.ppw.prueb.model;
 
+import java.util.List;
+
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 @Entity
@@ -11,17 +13,15 @@ import jakarta.persistence.Table;
 public class Person {
 
 	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private int id;
 	private String cedula;
 	private String name;
 	
-	public int getId() {
-		return id;
-	}
-	public void setId(int id) {
-		this.id = id;
-	}
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Consum> consumos;
+
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Debs> deudas;
+	
 	public String getCedula() {
 		return cedula;
 	}
@@ -34,8 +34,18 @@ public class Person {
 	public void setName(String name) {
 		this.name = name;
 	}
-	
-	
-	
+	public List<Consum> getConsumos() {
+		return consumos;
+	}
+	public void setConsumos(List<Consum> consumos) {
+		this.consumos = consumos;
+	}
+	public List<Debs> getDeudas() {
+		return deudas;
+	}
+	public void setDeudas(List<Debs> deudas) {
+		this.deudas = deudas;
+	}
+		
 	
 }
