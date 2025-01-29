@@ -1,56 +1,305 @@
-This project was created from the archetype "wildfly-jakartaee-webapp-archetype".
+Voy a dividir la solución en dos partes:  
 
-To deploy it:
-Run the maven goals "install wildfly:deploy"
+1. **Backend (Jakarta EE + Jersey + PostgreSQL o datos simulados)**  
+2. **Frontend (Angular para consumir el servicio y mostrar los datos en una tabla)**  
 
-To undeploy it:
-Run the maven goals "wildfly:undeploy"
+También incluiré los pasos para subir el código a **GitHub** y crear la documentación con capturas de pantalla.  
 
-==========================
+---
 
-DataSource:
-This sample includes a "persistence.xml" file in "src/main/resources/META-INF". This file defines
-a persistence unit "pruebPersistenceUnit" which uses the JakartaEE default database.
+# **📌 Backend - Jakarta EE con Jersey y PostgreSQL**  
 
-In production environment, you should define a database in WildFly config and point to this database
-in "persistence.xml".
+### **1️⃣ Crear Proyecto Maven en Eclipse**  
+- **Nuevo Proyecto → Maven Project**  
+- **Arquetipo**: `maven-archetype-webapp`  
+- **Nombre**: `simulacionApellido-backend`  
 
-If you don't use entity beans, you can delete "persistence.xml".
-==========================
+---
 
-Jakarta Faces:
-The web application is prepared for Jakarta Faces 4.0 by bundling an empty "faces-config.xml" in "src/main/webapp/WEB-INF".
-In case you don't want to use Jakarta Faces, simply delete this file and "src/main/webapp/beans.xml".
-==========================
+### **2️⃣ Configurar `pom.xml`**  
+Agrega las dependencias necesarias:  
 
-Testing:
-This sample is prepared for running JUnit5 unit tests with the Arquillian framework.
+```xml
+<dependencies>
+    <!-- Jakarta EE API -->
+    <dependency>
+        <groupId>jakarta.ws.rs</groupId>
+        <artifactId>jakarta.ws.rs-api</artifactId>
+        <version>3.0.0</version>
+        <scope>provided</scope>
+    </dependency>
 
-The configuration can be found in "prueb/pom.xml":
+    <!-- Jersey para implementar JAX-RS -->
+    <dependency>
+        <groupId>org.glassfish.jersey.containers</groupId>
+        <artifactId>jersey-container-servlet</artifactId>
+        <version>3.0.2</version>
+    </dependency>
 
-Three profiles are defined:
--"default": no integration tests are executed.
--"arq-remote": you have to start a WildFly server on your machine. The tests are executed by deploying
- the application to this server.
- Here the "maven-failsafe-plugin" is enabled so that integration tests can be run.
- Run maven with these arguments: "clean verify -Parq-remote"
--"arq-managed": this requires the environment variable "JBOSS_HOME" to be set:
- The server found in this path is started and the tests are executed by deploying the application to this server.
- Instead of using this environment variable, you can also define the path in "arquillian.xml".
- Here the "maven-failsafe-plugin" is enabled so that integration tests can be run.
- Run maven with these arguments: "clean verify -Parq-managed"
+    <!-- JSON con Jackson -->
+    <dependency>
+        <groupId>org.glassfish.jersey.media</groupId>
+        <artifactId>jersey-media-json-jackson</artifactId>
+        <version>3.0.2</version>
+    </dependency>
 
-The Arquillian test runner is configured with the file "src/test/resources/arquillian.xml"
-(duplicated in EJB and WEB project, depending where your tests are placed).
-The profile "arq-remote" uses the container qualifier "remote" in this file.
-The profile "arq-managed" uses the container qualifier "managed" in this file.
+    <!-- PostgreSQL Driver -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <version>42.3.8</version>
+    </dependency>
+</dependencies>
+```
 
-The project contains an integration test "SampleIT" which shows how to create the deployable WAR file using the ShrinkWrap API.
-You can delete this test file if no tests are necessary.
+---
 
-Why integration tests instead of the "maven-surefire-plugin" testrunner?
-The Arquillian test runner deploys the WAR file to the WildFly server and thus you have to build it yourself with the ShrinkWrap API.
-The goal "verify" (which triggers the maven-surefire-plugin) is executed later in the maven build lifecyle than the "test" goal so that the target
-artifact ("prueb.war") is already built. You can build
-the final WAR by including those files. The "maven-surefire-plugin" is executed before the WAR file
-are created, so this WAR files would have to be built in the "@Deployment" method, too.
+### **3️⃣ Configurar `web.xml`**
+En `src/main/webapp/WEB-INF/web.xml`:
+
+```xml
+<web-app xmlns="http://jakarta.ee/xml/ns/jakartaee"
+         version="5.0">
+    <servlet>
+        <servlet-name>Jersey REST API</servlet-name>
+        <servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+        <init-param>
+            <param-name>jersey.config.server.provider.packages</param-name>
+            <param-value>com.simulacionApellido.rest</param-value>
+        </init-param>
+        <load-on-startup>1</load-on-startup>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>Jersey REST API</servlet-name>
+        <url-pattern>/api/*</url-pattern>
+    </servlet-mapping>
+</web-app>
+```
+
+---
+
+### **4️⃣ Crear Modelo `Usuario.java`**  
+Crea el paquete `com.simulacionApellido.model` y agrega:
+
+```java
+package com.simulacionApellido.model;
+
+public class Usuario {
+    private String cedula;
+    private String nombre;
+    private double consumo;
+    private double deuda;
+
+    public Usuario(String cedula, String nombre, double consumo, double deuda) {
+        this.cedula = cedula;
+        this.nombre = nombre;
+        this.consumo = consumo;
+        this.deuda = deuda;
+    }
+
+    public String getCedula() { return cedula; }
+    public String getNombre() { return nombre; }
+    public double getConsumo() { return consumo; }
+    public double getDeuda() { return deuda; }
+}
+```
+
+---
+
+### **5️⃣ Crear Servicio REST (`UsuarioService.java`)**  
+En `com.simulacionApellido.rest`:
+
+```java
+package com.simulacionApellido.rest;
+
+import com.simulacionApellido.model.Usuario;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import java.util.HashMap;
+import java.util.Map;
+
+@Path("/usuarios")
+public class UsuarioService {
+    private static Map<String, Usuario> usuarios = new HashMap<>();
+
+    static {
+        usuarios.put("1234567890", new Usuario("1234567890", "Juan Pérez", 350.5, 120.75));
+        usuarios.put("0987654321", new Usuario("0987654321", "María López", 420.3, 80.20));
+    }
+
+    @GET
+    @Path("/{cedula}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Usuario obtenerUsuario(@PathParam("cedula") String cedula) {
+        Usuario usuario = usuarios.get(cedula);
+        if (usuario == null) {
+            throw new NotFoundException("Usuario no encontrado");
+        }
+        return usuario;
+    }
+}
+```
+
+📌 **Ejemplo de respuesta JSON:**  
+
+```json
+{
+    "cedula": "1234567890",
+    "nombre": "Juan Pérez",
+    "consumo": 350.5,
+    "deuda": 120.75
+}
+```
+
+---
+
+### **6️⃣ Ejecutar en Tomcat o Jetty**
+```sh
+mvn jetty:run
+```
+Ahora la API está disponible en:  
+➡ `http://localhost:8080/api/usuarios/1234567890`
+
+---
+
+# **📌 Frontend - Angular**  
+
+### **1️⃣ Crear Proyecto Angular**  
+```sh
+ng new simulacionApellido-frontend
+cd simulacionApellido-frontend
+```
+
+### **2️⃣ Instalar `HttpClientModule`**  
+Abre `app.module.ts` y agrega:
+
+```typescript
+import { HttpClientModule } from '@angular/common/http';
+
+@NgModule({
+  imports: [HttpClientModule]
+})
+export class AppModule { }
+```
+
+---
+
+### **3️⃣ Crear Servicio Angular**  
+```sh
+ng generate service services/backend
+```
+
+Edita `backend.service.ts`:
+
+```typescript
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class BackendService {
+  private apiUrl = 'http://localhost:8080/api/usuarios/';
+
+  constructor(private http: HttpClient) {}
+
+  obtenerUsuario(cedula: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}${cedula}`);
+  }
+}
+```
+
+---
+
+### **4️⃣ Crear Componente**
+Edita `app.component.ts`:
+
+```typescript
+import { Component } from '@angular/core';
+import { BackendService } from './services/backend.service';
+
+@Component({
+  selector: 'app-root',
+  templateUrl: './app.component.html'
+})
+export class AppComponent {
+  cedula = '';
+  usuario: any = null;
+  error = '';
+
+  constructor(private backendService: BackendService) {}
+
+  buscarUsuario() {
+    this.backendService.obtenerUsuario(this.cedula).subscribe({
+      next: data => {
+        this.usuario = data;
+        this.error = '';
+      },
+      error: err => {
+        this.error = 'Usuario no encontrado';
+        this.usuario = null;
+      }
+    });
+  }
+}
+```
+
+---
+
+### **5️⃣ Agregar la Vista (`app.component.html`)**
+```html
+<div>
+  <h1>Consulta de Consumo y Deuda</h1>
+  <input [(ngModel)]="cedula" placeholder="Ingrese su cédula">
+  <button (click)="buscarUsuario()">Consultar</button>
+
+  <div *ngIf="error">{{ error }}</div>
+
+  <table *ngIf="usuario">
+    <tr>
+      <th>Nombre</th>
+      <th>Consumo (kWh)</th>
+      <th>Deuda ($)</th>
+    </tr>
+    <tr>
+      <td>{{ usuario.nombre }}</td>
+      <td>{{ usuario.consumo }}</td>
+      <td>{{ usuario.deuda }}</td>
+    </tr>
+  </table>
+</div>
+```
+
+---
+
+### **6️⃣ Ejecutar Angular**
+```sh
+ng serve --open
+```
+
+---
+
+# **📌 Subir el Código a GitHub**
+```sh
+git init
+git add .
+git commit -m "Primera versión"
+git branch -M main
+git remote add origin https://github.com/tuusuario/simulacionApellido.git
+git push -u origin main
+```
+
+---
+
+# **📌 Documentación**
+1. **Capturar Pantallas**: Backend funcionando (`Postman` o navegador) y Angular mostrando datos.
+2. **Crear un documento Word o PDF** con:
+   - Descripción del proyecto.
+   - Capturas de pantalla.
+   - Enlace al repositorio GitHub.
+
+---
+
+### 🎯 **¡Listo! Ahora tienes una aplicación completa con Jakarta EE y Angular!** 🚀
